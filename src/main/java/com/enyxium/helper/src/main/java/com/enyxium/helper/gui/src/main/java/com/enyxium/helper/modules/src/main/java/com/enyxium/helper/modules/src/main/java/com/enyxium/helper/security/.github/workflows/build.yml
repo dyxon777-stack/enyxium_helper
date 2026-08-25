@@ -1,0 +1,51 @@
+name: Build Enyxium Helper Ultimate
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Generate Assets and Build
+        run: |
+          mkdir -p src/main/resources/assets/enyxium_helper
+
+          # Иконка мода 400x400
+          echo "iVBORw0KGgoAAAANSUhEUgAAAZAAAAGQAQAAAAAlToP+AAAAB3RJTUUH5gEeAxInqM3/OAAAAAlwSFlzAAALEgAACxIB0t1+/AAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAAEnQAABJ0Ad5mH3gAAAA0SURBVHic7cExAQAAAMKg9U9tDB8gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAPwN9+AAB966t1QAAAABJRU5ErkJggg==" | base64 -d > src/main/resources/assets/enyxium_helper/icon.png
+
+          # fabric.mod.json
+          cat << 'EOF' > src/main/resources/fabric.mod.json
+          {
+            "schemaVersion": 1,
+            "id": "enyxium_helper",
+            "version": "1.0.0",
+            "name": "Enyxium Helper Ultimate",
+            "description": "Full Liquid Glass Utility Mod for Enyxium",
+            "authors": ["Enyxium"],
+            "icon": "assets/enyxium_helper/icon.png",
+            "environment": "client",
+            "entrypoints": { "client": ["com.enyxium.helper.EnyxiumHelper"] },
+            "depends": { "fabricloader": ">=0.15.0", "minecraft": "~1.21.4" }
+          }
+          EOF
+
+          mkdir -p bin build/libs
+          javac -d bin $(find src/main/java -name "*.java")
+          cd bin && zip -r ../build/libs/enyxium_helper.jar .
+          cd ../src/main/resources && zip -r ../../../build/libs/enyxium_helper.jar .
+
+      - name: Upload JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: enyxium_helper_jar
+          path: build/libs/enyxium_helper.jar
+          
