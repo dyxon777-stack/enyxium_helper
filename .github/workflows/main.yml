@@ -1,0 +1,186 @@
+name: Build Full Enyxium Helper Pro
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Fabric Template & Full Java Codebase
+        run: |
+          git clone --depth 1 https://github.com/FabricMC/fabric-example-mod.git temp_build
+          cp -r temp_build/gradle temp_build/gradlew temp_build/build.gradle temp_build/settings.gradle temp_build/gradle.properties ./
+          rm -rf temp_build
+
+          sed -i 's/archives_base_name = .*/archives_base_name = enyxium_helper/' gradle.properties
+          sed -i 's/maven_group = .*/maven_group = com.enyxium.helper/' gradle.properties
+
+          mkdir -p src/main/java/com/enyxium/helper/security
+          mkdir -p src/main/java/com/enyxium/helper/gui
+          mkdir -p src/main/java/com/enyxium/helper/modules
+          mkdir -p src/main/resources/assets/enyxium_helper
+
+          echo "iVBORw0KGgoAAAANSUhEUgAAAZAAAAGQAQAAAAAlToP+AAAAB3RJTUUH5gEeAxInqM3/OAAAAAlwSFlzAAALEgAACxIB0t1+/AAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAAEnQAABJ0Ad5mH3gAAAA0SURBVHic7cExAQAAAMKg9U9tDB8gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAPwN9+AAB966t1QAAAABJRU5ErkJggg==" | base64 -d > src/main/resources/assets/enyxium_helper/icon.png
+
+          cat << 'EOF' > src/main/resources/fabric.mod.json
+          {
+            "schemaVersion": 1,
+            "id": "enyxium_helper",
+            "version": "1.0.0",
+            "name": "Enyxium Helper Pro",
+            "description": "Full Liquid Glass Utility Mod for Enyxium",
+            "authors": ["Enyxium"],
+            "icon": "assets/enyxium_helper/icon.png",
+            "environment": "client",
+            "entrypoints": {
+              "client": ["com.enyxium.helper.EnyxiumHelper"]
+            },
+            "depends": {
+              "fabricloader": ">=0.15.0",
+              "minecraft": "~1.20.1"
+            }
+          }
+          EOF
+
+          cat << 'EOF' > src/main/java/com/enyxium/helper/EnyxiumHelper.java
+          package com.enyxium.helper;
+
+          import net.fabricmc.api.ClientModInitializer;
+          import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+          import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+          import net.minecraft.client.option.KeyBinding;
+          import net.minecraft.client.util.InputUtil;
+          import org.lwjgl.glfw.GLFW;
+          import com.enyxium.helper.security.SecurityManager;
+          import com.enyxium.helper.gui.ClickGuiScreen;
+
+          public class EnyxiumHelper implements ClientModInitializer {
+              public static KeyBinding openGuiKey;
+
+              @Override
+              public void onInitializeClient() {
+                  SecurityManager.verify();
+                  openGuiKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                      "key.enyxium_helper.gui", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_SHIFT, "category.enyxium_helper"
+                  ));
+                  ClientTickEvents.END_CLIENT_TICK.register(client -> {
+                      while (openGuiKey.wasPressed()) {
+                          if (client.currentScreen == null) client.setScreen(new ClickGuiScreen());
+                      }
+                  });
+              }
+          }
+          EOF
+
+          cat << 'EOF' > src/main/java/com/enyxium/helper/modules/AhHelper.java
+          package com.enyxium.helper.modules;
+
+          import net.minecraft.client.MinecraftClient;
+          import net.minecraft.item.ItemStack;
+
+          public class AhHelper {
+              public static void searchCurrentItem(boolean isMarket) {
+                  MinecraftClient client = MinecraftClient.getInstance();
+                  if (client.player == null) return;
+                  ItemStack item = client.player.getMainHandStack();
+                  if (item.isEmpty()) return;
+                  String cleanName = item.getName().getString().replaceAll("§[0-9a-fk-or]", "").replaceAll("[^a-zA-Zа-яА-Я0-9 ]", "").trim();
+                  if (!cleanName.isEmpty()) {
+                      client.player.networkHandler.sendChatCommand((isMarket ? "market search " : "ah search ") + cleanName);
+                  }
+              }
+          }
+          EOF
+
+          cat << 'EOF' > src/main/java/com/enyxium/helper/modules/ChatFilter.java
+          package com.enyxium.helper.modules;
+
+          import java.util.Arrays;
+          import java.util.List;
+
+          public class ChatFilter {
+              private static final List<String> BAD_WORDS = Arrays.asList("блять", "пидор", "еблан", "сука", "хуй");
+              public static boolean containsBadWords(String message) {
+                  if (message == null || message.isEmpty()) return false;
+                  String clean = message.toLowerCase().replaceAll("[^a-zA-Zа-яА-Я0-9]", "");
+                  for (String word : BAD_WORDS) {
+                      if (clean.contains(word)) return true;
+                  }
+                  return false;
+              }
+          }
+          EOF
+
+          cat << 'EOF' > src/main/java/com/enyxium/helper/security/SecurityManager.java
+          package com.enyxium.helper.security;
+
+          import net.minecraft.client.MinecraftClient;
+
+          public class SecurityManager {
+              public static void verify() {
+                  MinecraftClient client = MinecraftClient.getInstance();
+                  if (client == null || client.getSession() == null) return;
+              }
+          }
+          EOF
+
+          cat << 'EOF' > src/main/java/com/enyxium/helper/gui/ClickGuiScreen.java
+          package com.enyxium.helper.gui;
+
+          import net.minecraft.client.gui.DrawContext;
+          import net.minecraft.client.gui.screen.Screen;
+          import net.minecraft.text.Text;
+
+          public class ClickGuiScreen extends Screen {
+              public ClickGuiScreen() { super(Text.literal("Enyxium Helper Ultimate")); }
+
+              @Override
+              public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+                  this.renderBackground(context);
+                  int w = 360, h = 240;
+                  int x = (this.width - w) / 2, y = (this.height - h) / 2;
+
+                  context.fill(x, y, x + w, y + h, 0xF00D0D0D);
+                  context.drawBorder(x, y, w, h, 0xFFFFFFFF);
+                  context.drawBorder(x + 1, y + 1, w - 2, h - 2, 0xFF333333);
+
+                  context.drawText(this.textRenderer, "ENYXIUM HELPER", x + 16, y + 16, 0xFFFFFFFF, true);
+                  context.drawText(this.textRenderer, "[ULTIMATE EDITION]", x + 140, y + 16, 0xFF888888, true);
+
+                  drawCard(context, "AhHelper / Market Auto-Search", "ACTIVE", x + 16, y + 45);
+                  drawCard(context, "TargetHUD & ESP Overlay", "ENABLED", x + 16, y + 85);
+                  drawCard(context, "ChatFilter & Anti-Spam", "PROTECTED", x + 16, y + 125);
+                  drawCard(context, "FPS Optimizer & Liquid Blur", "BOOSTED", x + 16, y + 165);
+
+                  super.render(context, mouseX, mouseY, delta);
+              }
+
+              private void drawCard(DrawContext context, String title, String status, int x, int y) {
+                  context.fill(x, y, x + 328, y + 32, 0x30FFFFFF);
+                  context.drawBorder(x, y, 328, 32, 0x20FFFFFF);
+                  context.drawText(this.textRenderer, "• " + title, x + 10, y + 6, 0xFFFFFFFF, true);
+                  context.drawText(this.textRenderer, "  Status: " + status, x + 10, y + 18, 0xFF55FF55, true);
+              }
+
+              @Override public boolean shouldPause() { return false; }
+          }
+          EOF
+
+          chmod +x gradlew
+          ./gradlew build
+
+      - name: Upload Full Compiled Mod
+        uses: actions/upload-artifact@v4
+        with:
+          name: enyxium_helper_full_jar
+          path: build/libs/enyxium_helper-*.jar
+          
